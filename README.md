@@ -25,17 +25,3 @@ Frontend Web: HTML5, CSS3 (Variáveis de Tema & Responsive Layout), JavaScript V
 Hardening & Princípio do Menor Privilégio: Apenas a Porta 80 (HTTP) foi liberada no Windows Defender Firewall com Segurança Avançada para receber o tráfego da aplicação web, mantendo bloqueadas portas administrativas não utilizadas.
 
 Procedimento de Resposta a Incidentes (Lockdown): A interface possui uma rotina em JavaScript que simula o isolamento perimetral e a elevação de alerta do sistema com alteração visual instantânea e registro de auditoria no log de segurança.
-
-👥 Equipe do Projeto
-
-Lipe — Arquitetura de Hardware, Virtualização (Windows Server / IIS), Redes e Tunelamento (ngrok)
-
-Integrante 2 — Desenvolvimento Frontend e Interface UI/UX
-
-Integrante 3 — Cyber Security e Regras de Firewall
-
-Integrante 4 — Análise de Redes e Protocolos
-
-Integrante 5 — Documentação Técnica e Registros de Evidências
-
-Projeto desenvolvido para a ExpoTech // Análise e Desenvolvimento de Sistemas.
