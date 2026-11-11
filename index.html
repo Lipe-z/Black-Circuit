@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Black Circuit // Central de Operações &amp; Telemetria</title>
+
+<style>
+/* =========================================================
+   1. VARIÁVEIS DE TEMA (paleta SOC / cyberpunk)
+   ========================================================= */
+:root {
+  --bg: #0a0e14;          /* fundo principal */
+  --panel: #0d131c;       /* fundo dos cards */
+  --line: #1c2733;        /* bordas discretas */
+  --text: #e6edf3;        /* texto claro */
+  --muted: #7d8b99;       /* texto secundário */
+  --green: #00ff66;       /* verde neon */
+  --cyan: #00f0ff;        /* ciano */
+  --red: #ff3b4e;         /* alerta crítico */
+  --yellow: #ffcc00;      /* aviso */
+  --accent: var(--green); /* cor de destaque (muda no lockdown) */
+  --font: "Fira Code", Consolas, "Courier New", monospace;
+}
+
+/* Estado de LOCKDOWN: troca o destaque e o fundo para vermelho */
+body.lockdown { --accent: var(--red); --bg: #14070a; --line: #3a141a; --panel: #1a0b0e; }
+
+/* =========================================================
+   2. RESET E BASE
+   ========================================================= */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+  transition: background .4s;
+  /* grade sutil de fundo, estilo tela de radar */
+  background-image:
+    linear-gradient(rgba(0,255,102,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,102,.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+body.lockdown { background-image:
+    linear-gradient(rgba(255,59,78,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,59,78,.05) 1px, transparent 1px); }
+.wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* Faixa vermelha piscante exibida somente em lockdown */
+.lock-banner {
+  display: none; background: var(--red); color: #000; text-align: center;
+  font-weight: 700; padding: 6px; letter-spacing: 2px;
+  animation: blink 1s steps(2) infinite;
+}
+body.lockdown .lock-banner { display: block; }
+
+/* =========================================================
+   3. CABEÇALHO
+   ========================================================= */
+header {
+  display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: flex-start;
+  border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  background: var(--panel); padding: 18px 20px; margin-bottom: 20px;
+}
+header h1 { font-size: clamp(1.1rem, 3.2vw, 1.7rem); color: var(--accent); letter-spacing: 1px; text-shadow: 0 0 12px currentColor; }
+header .sub { color: var(--cyan); margin-top: 6px; font-size: .85rem; }
+.clock-box { text-align: right; }
+#clock { font-size: 1.8rem; color: var(--text); font-weight: 700; letter-spacing: 2px; }
+#date  { color: var(--muted); font-size: .8rem; }
+.status-live { margin-top: 6px; font-size: .8rem; color: var(--accent); display: inline-flex; align-items: center; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: blink 1.2s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .2; } }
+
+/* =========================================================
+   4. SEÇÕES E GRID DE CARDS
+   ========================================================= */
+section { margin-bottom: 26px; }
+section > h2 {
+  font-size: .95rem; color: var(--cyan); margin-bottom: 12px; padding-bottom: 6px;
+  border-bottom: 1px dashed var(--line); font-weight: 400;
+}
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line); padding: 16px; position: relative; }
+.card .label { color: var(--muted); font-size: .78rem; }
+.card .value { font-size: 1.05rem; font-weight: 700; margin-top: 6px; }
+.card .detail { color: var(--muted); font-size: .78rem; margin-top: 4px; }
+
+/* Cores de status (aplicadas por classe) */
+.ok   { color: var(--green); }
+.info { color: var(--cyan); }
+.warn { color: var(--yellow); }
+.bad  { color: var(--red); }
+.card.s-ok   { border-top: 2px solid var(--green); }
+.card.s-info { border-top: 2px solid var(--cyan); }
+.card.s-bad  { border-top: 2px solid var(--red); }
+
+/* =========================================================
+   5. BOTÕES
+   ========================================================= */
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+button {
+  font-family: var(--font); font-size: .85rem; cursor: pointer;
+  background: transparent; color: var(--accent); border: 1px solid var(--accent);
+  padding: 12px 18px; transition: background .2s, color .2s, transform .1s;
+}
+button:hover { background: var(--accent); color: #000; }
+button:active { transform: scale(.97); }
+button.warn-btn { color: var(--yellow); border-color: var(--yellow); }
+button.warn-btn:hover { background: var(--yellow); color: #000; }
+button.flash { animation: flash .6s; }
+@keyframes flash { 0%,100% { background: transparent; } 50% { background: var(--yellow); color: #000; } }
+
+/* =========================================================
+   6. BARRAS DE PROGRESSO (CPU / RAM)
+   ========================================================= */
+.bar { height: 10px; background: #05080c; border: 1px solid var(--line); margin-top: 10px; }
+.bar > span { display: block; height: 100%; width: 0; background: var(--green); box-shadow: 0 0 8px var(--green); transition: width .8s ease, background .4s; }
+.bar.cyan > span { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+
+/* =========================================================
+   7. TERMINAL DE LOGS
+   ========================================================= */
+.terminal { background: #000; border: 1px solid var(--line); }
+.term-head { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .78rem; }
+#log { height: 260px; overflow-y: auto; padding: 12px; font-size: .82rem; }
+#log div { white-space: pre-wrap; word-break: break-word; }
+#log .ts { color: var(--muted); }
+#log .NET  { color: var(--cyan); }
+#log .SEC  { color: var(--green); }
+#log .HOME { color: var(--text); }
+#log .SYS  { color: var(--yellow); }
+#log .ALERT { color: var(--red); font-weight: 700; }
+.cursor::after { content: "█"; animation: blink 1s steps(2) infinite; color: var(--green); }
+
+footer { text-align: center; color: var(--muted); font-size: .72rem; padding: 10px 0 20px; }
+
+/* =========================================================
+   8. RESPONSIVIDADE E ACESSIBILIDADE
+   ========================================================= */
+@media (max-width: 600px) {
+  .wrap { padding: 10px; }
+  .clock-box { text-align: left; width: 100%; }
+  button { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+
+<body>
+<!-- Faixa de alerta (visível apenas em lockdown) -->
+<div class="lock-banner" role="alert">/// LOCKDOWN ATIVO — PERÍMETRO SELADO ///</div>
+
+<div class="wrap">
+
+  <!-- ================= CABEÇALHO ================= -->
+  <header>
+    <div>
+      <h1>Black Circuit // CENTRAL DE OPERAÇÕES &amp; TELEMETRIA</h1>
+      <div class="sub">[ WINDOWS SERVER 2022 - IIS SERVER ONLINE ]</div>
+    </div>
+    <div class="clock-box">
+      <div id="clock">00:00:00</div>
+      <div id="date">--/--/----</div>
+      <div class="status-live"><span class="dot"></span><span id="sysState">SISTEMA ATIVO</span></div>
+    </div>
+  </header>
+
+  <!-- ================= SEÇÃO 1: SMART HOME ================= -->
+  <section>
+    <h2>&gt; SMART HOME COMMAND // Central Residencial</h2>
+    <div class="grid">
+      <div class="card s-ok" id="cardLock">
+        <div class="label">Trancas Biométricas</div>
+        <div class="value ok" id="stLock">TRANCADO</div>
+        <div class="detail">Leitor digital: 3 portas</div>
+      </div>
+      <div class="card s-ok" id="cardCam">
+        <div class="label">CFTV / Câmeras</div>
+        <div class="value ok" id="stCam">MONITORANDO (4/4)</div>
+        <div class="detail">Gravação contínua</div>
+      </div>
+      <div class="card s-info" id="cardAlarm">
+        <div class="label">Alarme Perimetral</div>
+        <div class="value info" id="stAlarm">ARMADO</div>
+        <div class="detail">Sensores: portas e janelas</div>
+      </div>
+      <div class="card s-ok" id="cardFence">
+        <div class="label">Cerca Elétrica</div>
+        <div class="value ok" id="stFence">TENSÃO NOMINAL - 12KV</div>
+        <div class="detail">Sem falhas de isolamento</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btnLockdown" type="button">[ Alternar Lockdown ]</button>
+      <button id="btnTest" type="button" class="warn-btn">[ Disparar Alarme de Teste ]</button>
+      <button id="btnSound" type="button" aria-pressed="true">[ Som: LIGADO ]</button>
+    </div>
+  </section>
+
+  <!-- ================= SEÇÃO 2: TELEMETRIA ================= -->
+  <section>
+    <h2>&gt; HARDWARE &amp; SERVER TELEMETRY // Telemetria da Maleta</h2>
+    <div class="grid">
+      <div class="card s-ok">
+        <div class="label">Processador Host</div>
+        <div class="value">Intel Core i5-3470 @ 3.20GHz</div>
+        <div class="detail">Uso: <span id="cpuPct" class="ok">0%</span></div>
+        <div class="bar"><span id="cpuBar"></span></div>
+      </div>
+      <div class="card s-info">
+        <div class="label">Memória RAM da VM</div>
+        <div class="value">4.0 GB Alocados</div>
+        <div class="detail">Em uso: <span id="ramTxt" class="info">0.0 GB</span> (<span id="ramPct">0</span>%)</div>
+        <div class="bar cyan"><span id="ramBar"></span></div>
+      </div>
+      <div class="card s-ok">
+        <div class="label">Servidor Web</div>
+        <div class="value">IIS 10.0 / Porta 80 (HTTP)</div>
+        <div class="detail">Status: <span class="ok">ESCUTANDO</span></div>
+      </div>
+      <div class="card s-info">
+        <div class="label">Túnel ngrok</div>
+        <div class="value info">ACTIVE (HTTPS Tunneling)</div>
+        <div class="detail">Latência: <span id="ping" class="ok">-- ms</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= SEÇÃO 3: TERMINAL ================= -->
+  <section>
+    <h2>&gt; TERMINAL DE LOGS &amp; CYBER SECURITY</h2>
+    <div class="terminal">
+      <div class="term-head"><span>root@black-circuit:~# tail -f /var/log/ops.log</span><span id="logCount">0 eventos</span></div>
+      <div id="log" role="log" aria-live="off"></div>
+    </div>
+  </section>
+
+  <footer>Black Circuit // Case Mod Portátil — Projeto Acadêmico de TI</footer>
+</div>
+
+<script>
+/* =========================================================
+   JS 1. UTILITÁRIOS
+   ========================================================= */
+const $ = id => document.getElementById(id);
+const rand = (min, max) => Math.random() * (max - min) + min;
+const pad = n => String(n).padStart(2, "0");
+
+/* =========================================================
+   JS 2. RELÓGIO DIGITAL EM TEMPO REAL
+   ========================================================= */
+function updateClock() {
+  const d = new Date();
+  $("clock").textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  $("date").textContent = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+/* =========================================================
+   JS 3. TERMINAL DE LOGS
+   ========================================================= */
+const logBox = $("log");
+let logCount = 0;
+
+/* Adiciona uma linha ao terminal. tipo = NET | SEC | HOME | SYS | ALERT */
+function addLog(tipo, msg) {
+  const d = new Date();
+  const hora = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  const linha = document.createElement("div");
+  linha.className = tipo;
+  linha.innerHTML = `<span class="ts">${hora}</span> [${tipo}] ${msg}`;
+  logBox.appendChild(linha);
+  /* Mantém no máximo 80 linhas para não pesar a página */
+  while (logBox.children.length > 80) logBox.removeChild(logBox.firstChild);
+  logBox.scrollTop = logBox.scrollHeight;
+  $("logCount").textContent = `${++logCount} eventos`;
+}
+
+/* Banco de mensagens simuladas */
+const eventos = [
+  ["NET",  "Pacote HTTP recebido na Porta 80 via ngrok"],
+  ["NET",  "Requisição GET / respondida pelo IIS 10.0 (200 OK)"],
+  ["NET",  "Túnel ngrok: handshake HTTPS renovado"],
+  ["SEC",  "Firewall Windows Defender: Regra Inbound 80 OK"],
+  ["SEC",  "Varredura de portas bloqueada — origem externa descartada"],
+  ["SEC",  "Autenticação biométrica validada: Porta Principal"],
+  ["HOME", "Sensor de presença Sala de Estar: Nenhuma anomalia"],
+  ["HOME", "Câmera 03 (Garagem): movimento ignorado — animal doméstico"],
+  ["HOME", "Cerca elétrica: tensão estável em 12KV"],
+  ["SYS",  "Alocação de memória vCPU 0/1 estabilizada"],
+  ["SYS",  "Temperatura do host dentro do limite nominal"],
+  ["SYS",  "Ventilação da maleta: fluxo de ar normal"]
+];
+
+/* Gera um log novo e agenda o próximo entre 3 e 5 segundos */
+function nextLog() {
+  const [t, m] = eventos[Math.floor(Math.random() * eventos.length)];
+  addLog(t, m);
+  setTimeout(nextLog, rand(3000, 5000));
+}
+addLog("SYS", "Black Circuit inicializado — módulos carregados");
+addLog("NET", "IIS 10.0 escutando na Porta 80");
+addLog("NET", "Túnel ngrok ativo (HTTPS)");
+setTimeout(nextLog, 3000);
+
+/* =========================================================
+   JS 4. TELEMETRIA SIMULADA (CPU / RAM / PING)
+   ========================================================= */
+let cpu = 25, ram = 1.8;
+
+function updateTelemetry() {
+  /* CPU: varia suavemente, sempre entre 15% e 45% */
+  cpu = Math.min(45, Math.max(15, cpu + rand(-6, 6)));
+  const c = Math.round(cpu);
+  $("cpuPct").textContent = c + "%";
+  $("cpuBar").style.width = c + "%";
+
+  /* RAM: variação leve dentro dos 4.0 GB alocados (1.5 a 2.6 GB) */
+  ram = Math.min(2.6, Math.max(1.5, ram + rand(-0.12, 0.12)));
+  const pct = Math.round((ram / 4) * 100);
+  $("ramTxt").textContent = ram.toFixed(1) + " GB";
+  $("ramPct").textContent = pct;
+  $("ramBar").style.width = pct + "%";
+
+  /* Latência do túnel */
+  $("ping").textContent = Math.round(rand(28, 75)) + " ms";
+}
+updateTelemetry();
+setInterval(updateTelemetry, 2000);
+
+/* =========================================================
+   JS 5. SOM (Web Audio API — sons gerados por código,
+   sem arquivos externos, funciona 100% offline)
+   ========================================================= */
+let audioCtx = null;
+let soundOn = true;
+
+/* Cria/retoma o contexto de áudio (o navegador só libera após um clique) */
+function getCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+/* Sirene: alterna duas notas agudas (estilo alarme de segurança) */
+function playAlarm(seconds = 3) {
+  if (!soundOn) return;
+  const ctx = getCtx(), t0 = ctx.currentTime;
+  const osc = ctx.createOscillator(), gain = ctx.createGain();
+  osc.type = "square";
+  for (let i = 0; i < seconds * 4; i++) {            /* troca de nota a cada 0,25 s */
+    osc.frequency.setValueAtTime(i % 2 ? 660 : 988, t0 + i * 0.25);
+  }
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(0.15, t0 + 0.05);
+  gain.gain.setValueAtTime(0.15, t0 + seconds - 0.1);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + seconds);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(t0); osc.stop(t0 + seconds);
+}
+
+/* Um "clack" metálico: estalo de ruído filtrado + batida grave */
+function clack(t, freq, vol) {
+  const ctx = getCtx(), len = Math.floor(ctx.sampleRate * 0.05);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate), data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+  const src = ctx.createBufferSource(); src.buffer = buf;
+  const filt = ctx.createBiquadFilter(); filt.type = "bandpass"; filt.frequency.value = freq; filt.Q.value = 1.5;
+  const g = ctx.createGain(); g.gain.value = vol;
+  src.connect(filt).connect(g).connect(ctx.destination); src.start(t);
+
+  const o = ctx.createOscillator(), og = ctx.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(140, t);
+  o.frequency.exponentialRampToValueAtTime(50, t + 0.12);
+  og.gain.setValueAtTime(vol * 0.6, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+  o.connect(og).connect(ctx.destination); o.start(t); o.stop(t + 0.16);
+}
+
+/* Fechadura travando: "tic" do pino + "clunk" pesado do ferrolho */
+function playLockSound() {
+  if (!soundOn) return;
+  const t = getCtx().currentTime;
+  clack(t, 2800, 0.7);
+  clack(t + 0.22, 1100, 1.0);
+}
+
+/* Fechadura destravando: dois cliques mais leves */
+function playUnlockSound() {
+  if (!soundOn) return;
+  const t = getCtx().currentTime;
+  clack(t, 1500, 0.8);
+  clack(t + 0.14, 3200, 0.5);
+}
+
+/* Botão para ligar/desligar o som */
+$("btnSound").addEventListener("click", e => {
+  soundOn = !soundOn;
+  e.currentTarget.textContent = soundOn ? "[ Som: LIGADO ]" : "[ Som: MUDO ]";
+  e.currentTarget.setAttribute("aria-pressed", soundOn);
+});
+
+/* =========================================================
+   JS 6. BOTÕES INTERATIVOS
+   ========================================================= */
+let lockdown = false;
+
+/* Define texto e cor de um status */
+function setStatus(id, texto, cls) {
+  const el = $(id);
+  el.textContent = texto;
+  el.className = "value " + cls;
+}
+
+/* Alterna o modo LOCKDOWN: tela vermelha + status alterados */
+$("btnLockdown").addEventListener("click", () => {
+  lockdown = !lockdown;
+  document.body.classList.toggle("lockdown", lockdown);
+
+  if (lockdown) {
+    setStatus("stLock",  "SELADO - LOCKDOWN", "bad");
+    setStatus("stCam",   "GRAVAÇÃO PRIORITÁRIA (4/4)", "bad");
+    setStatus("stAlarm", "ALERTA MÁXIMO", "bad");
+    setStatus("stFence", "TENSÃO ELEVADA - 12KV", "bad");
+    $("sysState").textContent = "LOCKDOWN ATIVO";
+    playLockSound();
+    addLog("ALERT", "LOCKDOWN ATIVADO — todas as portas seladas");
+  } else {
+    setStatus("stLock",  "TRANCADO", "ok");
+    setStatus("stCam",   "MONITORANDO (4/4)", "ok");
+    setStatus("stAlarm", "ARMADO", "info");
+    setStatus("stFence", "TENSÃO NOMINAL - 12KV", "ok");
+    $("sysState").textContent = "SISTEMA ATIVO";
+    playUnlockSound();
+    addLog("SEC", "Lockdown desativado — operação normal restaurada");
+  }
+});
+
+/* Dispara um alarme de teste: aviso no log + feedback visual no botão */
+$("btnTest").addEventListener("click", e => {
+  const btn = e.currentTarget;
+  btn.classList.remove("flash");
+  void btn.offsetWidth;            /* reinicia a animação */
+  btn.classList.add("flash");
+  playAlarm(3);
+  addLog("ALERT", "[TESTE] Alarme de teste disparado — nenhuma ameaça real");
+  setTimeout(() => addLog("SEC", "Teste de alarme concluído — sirene silenciada"), 3000);
+});
+</script>
+</body>
+</html>
